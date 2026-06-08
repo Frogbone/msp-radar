@@ -23,7 +23,7 @@
 
     <script>
         window.addEventListener('load', () => {
-            // Your exact Apple Valley coordinates
+            // Your exact Apple Valley coordinate variables
             const homeLat = 44.7375513;
             const homeLng = -93.2008404;
             
@@ -42,69 +42,81 @@
                 markers = [];
             }
 
+            // Calculate distance between two coordinate sets in kilometers
+            function getDistance(lat1, lon1, lat2, lon2) {
+                const R = 6371; 
+                const dLat = (lat2 - lat1) * Math.PI / 180;
+                const dLon = (lon2 - lon1) * Math.PI / 180;
+                const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
+                          Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
+                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+                return R * c;
+            }
+
             async function getFlights() {
-                // Outer boundaries covering the local MSP arrival/departure tracks
-                const lamin = 44.55;
-                const lomin = -93.45;
-                const lamax = 44.95;
-                const lomax = -92.95;
-                
-                const targetUrl = `https://opensky-network.org/api/states/all?lamin=${lamin}&lomin=${lomin}&lamax=${lamax}&lomax=${lomax}`;
-                
-                // Using corsproxy.io which natively adds the flawless Access-Control-Allow-Origin headers
-                const url = `https://corsproxy.io/?${encodeURIComponent(targetUrl)}`;
+                // Fetching a reliable, live open-source dump array tracking general midwest data vectors
+                const url = `https://api.adsb.lol/v2/lat/${homeLat}/lon/${homeLng}/dist/40`;
                 
                 try {
+                    // Pull natively without proxy wrappers to prevent 522 proxy timeout triggers
                     const response = await fetch(url);
                     if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
                     
                     const data = await response.json();
+                    const aircraftArray = data.ac || [];
                     
-                    if (!data || !data.states || data.states.length === 0) {
-                        document.getElementById('flights-list').innerHTML = 'No planes detected inside local airspace right now.';
+                    if (aircraftArray.length === 0) {
+                        document.getElementById('flights-list').innerHTML = 'No planes detected inside local airspace.';
                         clearMarkers();
                         return;
                     }
                     
-                    updateMapAndPanel(data.states);
+                    updateMapAndPanel(aircraftArray);
                 } catch (error) {
                     console.error("Airspace read error:", error);
-                    document.getElementById('flights-list').innerHTML = 'Scanning local corridors...';
+                    // Fallback option: If the main server hiccups, display scanning notification gracefully
+                    document.getElementById('flights-list').innerHTML = 'Synchronizing satellite telemetry...';
                 }
             }
 
-            function updateMapAndPanel(statesList) {
+            function updateMapAndPanel(aircraftList) {
                 clearMarkers();
                 
                 const listDiv = document.getElementById('flights-list');
                 listDiv.innerHTML = '';
 
-                statesList.forEach(flight => {
-                    const callsign = flight[1] ? flight[1].trim() : "UNKNOWN";
-                    const longitude = flight[5];
-                    const latitude = flight[6];
-                    const altitude = flight[7] ? Math.round(flight[7] * 3.28084) : 0; // Convert meters to feet
-                    const velocity = flight[9] ? Math.round(flight[9] * 2.23694) : 0; // Convert m/s to mph
+                aircraftList.forEach(plane => {
+                    const callsign = plane.flight ? plane.flight.trim() : (plane.r || "UNKNOWN");
+                    const latitude = plane.lat;
+                    const longitude = plane.lon;
+                    const altitude = plane.alt_baro || plane.alt_geom || 0; 
+                    const velocity = plane.gs ? Math.round(plane.gs * 1.15078) : 0; // Knots to mph
+                    const type = plane.t || "Aircraft"; 
 
                     if (latitude && longitude) {
-                        const marker = L.marker([latitude, longitude])
-                            .bindPopup(`<b>✈️ ${callsign}</b><br>Alt: ${altitude} ft<br>Speed: ${velocity} mph`)
-                            .addTo(map);
-                        markers.push(marker);
+                        // Double check the aircraft is within a crisp 40km range of your roof
+                        const distFromHome = getDistance(homeLat, homeLng, latitude, longitude);
+                        
+                        if (distFromHome <= 40) {
+                            const marker = L.marker([latitude, longitude])
+                                .bindPopup(`<b>✈️ ${callsign} (${type})</b><br>Alt: ${altitude} ft<br>Speed: ${velocity} mph`)
+                                .addTo(map);
+                            markers.push(marker);
 
-                        listDiv.innerHTML += `
-                            <div class="flight-item">
-                                <strong>✈️ Target ${callsign}</strong> | Alt: ${altitude} ft | Speed: ${velocity} mph
-                            </div>`;
+                            listDiv.innerHTML += `
+                                <div class="flight-item">
+                                    <strong>✈️ Target ${callsign}</strong> (${type}) | Alt: ${altitude} ft | Speed: ${velocity} mph
+                                </div>`;
+                        }
                     }
                 });
                 
                 if (listDiv.innerHTML === '') {
-                    listDiv.innerHTML = 'No active aircraft over Apple Valley grid points.';
+                    listDiv.innerHTML = 'Airspace clear over Apple Valley tracking lines.';
                 }
             }
 
-            // OpenSky limits anonymous users to 10-second request cycles
+            // Pinging loop interval execution parameters set to 10 seconds
             getFlights();
             setInterval(getFlights, 10000);
         });
