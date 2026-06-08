@@ -3,123 +3,36 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Apple Valley Live Radar</title>
-    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <title>Apple Valley Live Flight Tracker</title>
     <style>
-        body, html { margin: 0; padding: 0; height: 100%; font-family: sans-serif; background: #111; color: #fff; }
-        #map { height: 70%; width: 100%; }
-        #info-panel { height: 30%; padding: 15px; box-sizing: border-box; overflow-y: auto; font-size: 1.2em; }
-        .flight-item { padding: 10px; border-bottom: 1px solid #333; }
+        body, html { 
+            margin: 0; 
+            padding: 0; 
+            height: 100%; 
+            width: 100%; 
+            background-color: #111; 
+            overflow: hidden;
+            font-family: sans-serif;
+        }
+        #tracker-container {
+            width: 100%;
+            height: 100%;
+        }
+        iframe {
+            width: 100%;
+            height: 100%;
+            border: none;
+        }
     </style>
 </head>
 <body>
 
-    <div id="map"></div>
-    <div id="info-panel">
-        <h2>Flights Overhead (MSP Path)</h2>
-        <div id="flights-list">Initializing radar tracking grid...</div>
+    <div id="tracker-container">
+        <iframe 
+            src="https://adsb.fi/?lat=44.7375&lon=-93.2008&zoom=11" 
+            allow="geolocation">
+        </iframe>
     </div>
 
-    <script>
-        window.addEventListener('load', () => {
-            const homeLat = 44.7375513;
-            const homeLng = -93.2008404;
-            
-            const map = L.map('map').setView([homeLat, homeLng], 11); 
-            
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-                attribution: '© OpenStreetMap'
-            }).addTo(map);
-
-            L.marker([homeLat, homeLng]).addTo(map).bindPopup('My House').openPopup();
-
-            let markers = [];
-
-            function clearMarkers() {
-                markers.forEach(m => map.removeLayer(m));
-                markers = [];
-            }
-
-            function getDistance(lat1, lon1, lat2, lon2) {
-                const R = 6371; 
-                const dLat = (lat2 - lat1) * Math.PI / 180;
-                const dLon = (lon2 - lon1) * Math.PI / 180;
-                const a = Math.sin(dLat/2) * Math.sin(dLat/2) +
-                          Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) * Math.sin(dLon/2) * Math.sin(dLon/2);
-                const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
-                return R * c;
-            }
-
-            async function getFlights() {
-                const targetUrl = `https://api.adsb.lol/v2/lat/${homeLat}/lon/${homeLng}/dist/40`;
-                
-                // Wrap the link inside AllOrigins. This forces a clean data delivery.
-                const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&cb=${Date.now()}`;
-                
-                try {
-                    const response = await fetch(proxyUrl);
-                    if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
-                    
-                    const wrapperData = await response.json();
-                    
-                    // AllOrigins converts the API response to a string inside .contents. We unpack it here.
-                    const data = JSON.parse(wrapperData.contents);
-                    const aircraftArray = data.ac || [];
-                    
-                    if (aircraftArray.length === 0) {
-                        document.getElementById('flights-list').innerHTML = 'No planes detected inside local airspace.';
-                        clearMarkers();
-                        return;
-                    }
-                    
-                    updateMapAndPanel(aircraftArray);
-                } catch (error) {
-                    console.error("Airspace read error:", error);
-                    document.getElementById('flights-list').innerHTML = 'Syncing local flight corridors...';
-                }
-            }
-
-            function updateMapAndPanel(aircraftList) {
-                clearMarkers();
-                
-                const listDiv = document.getElementById('flights-list');
-                listDiv.innerHTML = '';
-
-                aircraftList.forEach(plane => {
-                    const callsign = plane.flight ? plane.flight.trim() : (plane.r || "UNKNOWN");
-                    const latitude = plane.lat;
-                    const longitude = plane.lon;
-                    const altitude = plane.alt_baro || plane.alt_geom || 0; 
-                    const velocity = plane.gs ? Math.round(plane.gs * 1.15078) : 0; 
-                    const type = plane.t || "Aircraft"; 
-
-                    if (latitude && longitude) {
-                        const distFromHome = getDistance(homeLat, homeLng, latitude, longitude);
-                        
-                        if (distFromHome <= 40) {
-                            const marker = L.marker([latitude, longitude])
-                                .bindPopup(`<b>✈️ ${callsign} (${type})</b><br>Alt: ${altitude} ft<br>Speed: ${velocity} mph`)
-                                .addTo(map);
-                            markers.push(marker);
-
-                            listDiv.innerHTML += `
-                                <div class="flight-item">
-                                    <strong>✈️ Target ${callsign}</strong> (${type}) | Alt: ${altitude} ft | Speed: ${velocity} mph
-                                </div>`;
-                        }
-                    }
-                });
-                
-                if (listDiv.innerHTML === '') {
-                    listDiv.innerHTML = 'Airspace clear over Apple Valley tracking lines.';
-                }
-            }
-
-            // Request loop set to a safe 12 seconds
-            getFlights();
-            setInterval(getFlights, 12000);
-        });
-    </script>
 </body>
 </html>
