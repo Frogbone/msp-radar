@@ -22,95 +22,96 @@
     </div>
 
     <script>
-        // Use standard load event to ensure page elements are ready
-        window.addEventListener('load', () => {
-            
-            // Your exact Apple Valley home coordinate variables
-            const homeLat = 44.7375513;
-            const homeLng = -93.2008404;
-            
-            // Zoom level 11 handles a 25-mile radius visually well on a tablet
-            const map = L.map('map').setView([homeLat, homeLng], 11); 
-            
-            L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
-                attribution: '© OpenStreetMap'
-            }).addTo(map);
+        // Your Apple Valley home coordinate variables
+        const homeLat = 44.7375513;
+        const homeLng = -93.2008404;
+        
+        // Initialize the Leaflet Map
+        const map = L.map('map').setView([homeLat, homeLng], 11); 
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            attribution: '© OpenStreetMap'
+        }).addTo(map);
 
-            L.marker([homeLat, homeLng]).addTo(map).bindPopup('My House').openPopup();
+        L.marker([homeLat, homeLng]).addTo(map).bindPopup('My House').openPopup();
 
-            let markers = [];
+        let markers = [];
 
-            function clearMarkers() {
-                markers.forEach(m => map.removeLayer(m));
-                markers = [];
+        function clearMarkers() {
+            markers.forEach(m => map.removeLayer(m));
+            markers = [];
+        }
+
+        // 1. Creative dynamic bypass: Injected script tag method
+        function getFlights() {
+            // Remove any old leftover script tag from the previous loop
+            const oldScript = document.getElementById('jsonp-flight-script');
+            if (oldScript) oldScript.remove();
+
+            // Create a completely vanilla script element
+            const script = document.createElement('script');
+            script.id = 'jsonp-flight-script';
+            
+            // This pulls global aircraft data. The browser allows it completely because it's loaded as a script element.
+            script.src = `https://opendata.adsb.fi/aircraft.json?callback=processFlightData&cb=${Date.now()}`;
+            
+            // Inject it into the page to trigger the network load
+            document.body.appendChild(script);
+        }
+
+        // 2. This function runs automatically the split second the data arrives
+        function processFlightData(data) {
+            if (!data || !data.aircraft) {
+                document.getElementById('flights-list').innerHTML = 'Searching airspace...';
+                return;
             }
 
-            async function getFlights() {
-                // Tracking a 25 nautical mile zone centered directly on your roof
-                const url = `https://api.adsb.lol/v2/lat/${homeLat}/lon/${homeLng}/dist/25`;
-                
-                try {
-                    // DO NOT pass custom headers. Keep the request 100% simple to bypass CORS OPTIONS preflight
-                    const response = await fetch(url);
-                    
-                    if (!response.ok) {
-                        throw new Error(`HTTP network error: ${response.status}`);
-                    }
-                    
-                    const data = await response.json();
-                    
-                    // Fallback to match either format the feed provides
-                    const aircraftArray = data.ac || data || [];
-                    
-                    if (aircraftArray.length === 0) {
-                        document.getElementById('flights-list').innerHTML = 'No planes detected inside local airspace.';
-                        clearMarkers();
-                        return;
-                    }
-                    
-                    updateMapAndPanel(aircraftArray);
-                } catch (error) {
-                    console.error("Airspace read error:", error);
-                    document.getElementById('flights-list').innerHTML = 'Re-establishing data feed sync...';
+            // Filter the massive data list down to just planes within a rough bounding box of your house
+            const lamin = 44.50, lomin = -93.50, lamax = 45.00, lomax = -92.90;
+            
+            const localPlanes = data.aircraft.filter(plane => {
+                return plane.lat >= lamin && plane.lat <= lamax && plane.lon >= lomin && plane.lon <= lomax;
+            });
+
+            updateMapAndPanel(localPlanes);
+        }
+
+        // 3. Render the localized planes cleanly onto your tablet map
+        function updateMapAndPanel(aircraftList) {
+            clearMarkers();
+            
+            const listDiv = document.getElementById('flights-list');
+            listDiv.innerHTML = '';
+
+            if (aircraftList.length === 0) {
+                listDiv.innerHTML = 'No planes detected inside local airspace right now.';
+                return;
+            }
+
+            aircraftList.forEach(plane => {
+                const callsign = plane.flight ? plane.flight.trim() : (plane.r || "UNKNOWN");
+                const latitude = plane.lat;
+                const longitude = plane.lon;
+                const altitude = plane.alt_baro || plane.alt_geom || 0; 
+                const velocity = plane.gs ? Math.round(plane.gs) : 0; 
+                const type = plane.t || "Aircraft"; 
+
+                if (latitude && longitude) {
+                    const marker = L.marker([latitude, longitude])
+                        .bindPopup(`<b>✈️ ${callsign} (${type})</b><br>Alt: ${altitude} ft<br>Speed: ${velocity} kts`)
+                        .addTo(map);
+                    markers.push(marker);
+
+                    listDiv.innerHTML += `
+                        <div class="flight-item">
+                            <strong>✈️ Target ${callsign}</strong> (${type}) | Alt: ${altitude} ft | Speed: ${velocity} kts
+                        </div>`;
                 }
-            }
+            });
+        }
 
-            function updateMapAndPanel(aircraftList) {
-                clearMarkers();
-                
-                const listDiv = document.getElementById('flights-list');
-                listDiv.innerHTML = '';
-
-                aircraftList.forEach(plane => {
-                    const callsign = plane.flight ? plane.flight.trim() : (plane.r || "UNKNOWN");
-                    const latitude = plane.lat;
-                    const longitude = plane.lon;
-                    const altitude = plane.alt_baro || plane.alt_geom || 0; 
-                    const velocity = plane.gs ? Math.round(plane.gs) : 0; 
-                    const type = plane.t || "Aircraft"; 
-
-                    if (latitude && longitude) {
-                        const marker = L.marker([latitude, longitude])
-                            .bindPopup(`<b>✈️ ${callsign} (${type})</b><br>Alt: ${altitude} ft<br>Speed: ${velocity} kts`)
-                            .addTo(map);
-                        markers.push(marker);
-
-                        listDiv.innerHTML += `
-                            <div class="flight-item">
-                                <strong>✈️ Target ${callsign}</strong> (${type}) | Alt: ${altitude} ft | Speed: ${velocity} kts
-                            </div>`;
-                    }
-                });
-                
-                if (listDiv.innerHTML === '') {
-                    listDiv.innerHTML = 'Scanning local corridors...';
-                }
-            }
-
-            // Run right away, then cycle every 10 seconds
-            getFlights();
-            setInterval(getFlights, 10000);
-        });
+        // Loop execution parameters set to 10-second spacing cycles
+        getFlights();
+        setInterval(getFlights, 10000);
     </script>
 </body>
 </html>
