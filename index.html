@@ -3,36 +3,34 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Apple Valley Live Flight Tracker</title>
+    <title>Apple Valley Flight Radar Launchpad</title>
     <style>
-        body, html { 
-            margin: 0; 
-            padding: 0; 
-            height: 100%; 
-            width: 100%; 
-            background-color: #111; 
-            overflow: hidden;
+        body {
+            background-color: #111;
+            color: #fff;
             font-family: sans-serif;
-        }
-        #tracker-container {
-            width: 100%;
-            height: 100%;
-        }
-        iframe {
-            width: 100%;
-            height: 100%;
-            border: none;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            font-size: 1.5em;
         }
     </style>
+    <script>
+        // Directly targets your Apple Valley coordinates
+        const homeLat = 44.7375;
+        const homeLon = -93.2008;
+        const zoomLevel = 11;
+
+        // The exact direct radar link
+        const radarUrl = `https://adsb.fi/?lat=${homeLat}&lon=${homeLon}&zoom=${zoomLevel}`;
+
+        // The split-second the page opens, forcefully redirect the browser window
+        window.location.replace(radarUrl);
+    </script>
 </head>
 <body>
-
-    <div id="tracker-container">
-        <iframe 
-            src="https://adsb.fi/?lat=44.7375&lon=-93.2008&zoom=11" 
-            allow="geolocation">
-        </iframe>
-    </div>
-
+    <div>Connecting to live Apple Valley airspace grid...</div>
 </body>
 </html>
