@@ -23,7 +23,6 @@
 
     <script>
         window.addEventListener('load', () => {
-            // Your exact Apple Valley coordinate variables
             const homeLat = 44.7375513;
             const homeLng = -93.2008404;
             
@@ -42,7 +41,6 @@
                 markers = [];
             }
 
-            // Calculate distance between two coordinate sets in kilometers
             function getDistance(lat1, lon1, lat2, lon2) {
                 const R = 6371; 
                 const dLat = (lat2 - lat1) * Math.PI / 180;
@@ -54,15 +52,19 @@
             }
 
             async function getFlights() {
-                // Fetching a reliable, live open-source dump array tracking general midwest data vectors
-                const url = `https://api.adsb.lol/v2/lat/${homeLat}/lon/${homeLng}/dist/40`;
+                const targetUrl = `https://api.adsb.lol/v2/lat/${homeLat}/lon/${homeLng}/dist/40`;
+                
+                // Wrap the link inside AllOrigins. This forces a clean data delivery.
+                const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&cb=${Date.now()}`;
                 
                 try {
-                    // Pull natively without proxy wrappers to prevent 522 proxy timeout triggers
-                    const response = await fetch(url);
+                    const response = await fetch(proxyUrl);
                     if (!response.ok) throw new Error(`HTTP Error: ${response.status}`);
                     
-                    const data = await response.json();
+                    const wrapperData = await response.json();
+                    
+                    // AllOrigins converts the API response to a string inside .contents. We unpack it here.
+                    const data = JSON.parse(wrapperData.contents);
                     const aircraftArray = data.ac || [];
                     
                     if (aircraftArray.length === 0) {
@@ -74,8 +76,7 @@
                     updateMapAndPanel(aircraftArray);
                 } catch (error) {
                     console.error("Airspace read error:", error);
-                    // Fallback option: If the main server hiccups, display scanning notification gracefully
-                    document.getElementById('flights-list').innerHTML = 'Synchronizing satellite telemetry...';
+                    document.getElementById('flights-list').innerHTML = 'Syncing local flight corridors...';
                 }
             }
 
@@ -90,11 +91,10 @@
                     const latitude = plane.lat;
                     const longitude = plane.lon;
                     const altitude = plane.alt_baro || plane.alt_geom || 0; 
-                    const velocity = plane.gs ? Math.round(plane.gs * 1.15078) : 0; // Knots to mph
+                    const velocity = plane.gs ? Math.round(plane.gs * 1.15078) : 0; 
                     const type = plane.t || "Aircraft"; 
 
                     if (latitude && longitude) {
-                        // Double check the aircraft is within a crisp 40km range of your roof
                         const distFromHome = getDistance(homeLat, homeLng, latitude, longitude);
                         
                         if (distFromHome <= 40) {
@@ -116,9 +116,9 @@
                 }
             }
 
-            // Pinging loop interval execution parameters set to 10 seconds
+            // Request loop set to a safe 12 seconds
             getFlights();
-            setInterval(getFlights, 10000);
+            setInterval(getFlights, 12000);
         });
     </script>
 </body>
