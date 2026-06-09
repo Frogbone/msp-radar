@@ -3,34 +3,33 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Apple Valley Radar Station</title>
+    <title>Apple Valley JetClock Radar</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
         body, html {
             margin: 0; padding: 0; height: 100%; width: 100%;
             background-color: #0b0c10; overflow: hidden;
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", sans-serif;
         }
         #screen-split {
             display: flex; flex-direction: column; height: 100vh; width: 100vw;
         }
-        /* Top Radar Grid Window */
         #map {
-            height: 72%; width: 100%; background: #0f1115;
+            height: 70%; width: 100%; background: #0b0c10;
         }
-        /* Bottom JetClock Panel */
         #clock-container {
-            height: 28%; width: 100%; background: #151922;
+            height: 30%; width: 100%; background: #11141a;
             display: flex; flex-direction: column;
             justify-content: center; align-items: center;
-            border-top: 3px solid #00f2fe; box-shadow: 0 -10px 25px rgba(0,0,0,0.6); z-index: 1000;
+            border-top: 2px solid #66fcf1; 
+            box-shadow: 0 -10px 30px rgba(0,0,0,0.7); z-index: 1000;
         }
         #time-text {
-            font-size: 4.5em; font-weight: bold; color: #00f2fe; margin: 0; line-height: 1; font-family: monospace; text-shadow: 0 0 10px rgba(0,242,254,0.3);
+            font-size: 5.5em; font-weight: 200; color: #66fcf1; margin: 0; line-height: 1; letter-spacing: -2px; font-family: sans-serif;
         }
         #date-text {
-            font-size: 1.1em; color: #c5a059; font-weight: 300; letter-spacing: 2px; margin-top: 10px; text-transform: uppercase;
+            font-size: 1.3em; color: #c5a059; font-weight: 300; letter-spacing: 3px; margin-top: 12px; text-transform: uppercase;
         }
     </style>
 </head>
@@ -40,12 +39,12 @@
         <div id="map"></div>
         <div id="clock-container">
             <div id="time-text">00:00:00</div>
-            <div id="date-text">SYNCHRONIZING SYSTEM CHRONOMETER...</div>
+            <div id="date-text">INITIALIZING CHRONOMETER...</div>
         </div>
     </div>
 
     <script>
-        // 1. CLOCK SYNCHRONIZATION RUNTIME
+        // 1. CLOCK LOGIC
         function tickClock() {
             const now = new Date();
             document.getElementById('time-text').innerText = now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit', hour12: false});
@@ -54,11 +53,10 @@
         setInterval(tickClock, 1000);
         tickClock();
 
-        // 2. RADAR ENGINE (Apple Valley Geolocation Array)
+        // 2. RADAR ENGINE (Apple Valley Center)
         const homeLat = 44.7375513;
         const homeLng = -93.2008404;
 
-        // Initialize display context with fade animations turned off to force instant rendering
         const map = L.map('map', {
             zoomControl: false,
             attributionControl: false,
@@ -66,21 +64,16 @@
             markerZoomAnimation: false
         }).setView([homeLat, homeLng], 11);
 
-        // Standard OpenStreetMap base layer
-        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        // Premium minimal dark base layer
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_nolabels/{z}/{x}/{y}{r}.png', {
             maxZoom: 19
         }).addTo(map);
 
-        // CSS Injector: Forces the standard light map into a beautiful dark tactical radar grid
-        const styleElement = document.createElement('style');
-        styleElement.innerHTML = '.leaflet-tile-container img { filter: brightness(0.25) invert(1) sepia(1) hue-rotate(185deg) saturate(2); }';
-        document.head.appendChild(styleElement);
-
-        // Core Home Beacon Marker
+        // Home Base Beacon
         const homeIcon = L.divIcon({
-            html: '<div style="background-color: #00f2fe; width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 15px #00f2fe; border: 2px solid #fff;"></div>',
+            html: '<div style="background-color: #66fcf1; width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 15px #66fcf1; border: 2px solid #fff;"></div>',
             className: 'home-marker',
-            iconSize: [14, 14]
+            iconSize: [12, 12]
         });
         L.marker([homeLat, homeLng], {icon: homeIcon}).addTo(map);
 
@@ -91,14 +84,15 @@
             planeMarkers = [];
         }
 
-        // Pull flight metrics via public open-source data infrastructure
+        // Live data retrieval loop
         async function refreshAirspaceTelemetry() {
+            // Looking at a wide geographic block covering the south metro arrival tracks
             const targetUrl = `https://opensky-network.org/api/states/all?lamin=44.55&lomin=-93.45&lamax=44.95&lomax=-92.95`;
             const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&cb=${Date.now()}`;
             
             try {
                 const response = await fetch(proxyUrl);
-                if (!response.ok) throw new Error("Connection dropped");
+                if (!response.ok) throw new Error("Drop");
                 
                 const wrapperData = await response.json();
                 const data = JSON.parse(wrapperData.contents);
@@ -110,17 +104,26 @@
                     const callsign = flight[1] ? flight[1].trim() : "UNK";
                     const lon = flight[5];
                     const lat = flight[6];
-                    const altitude = flight[7] ? Math.round(flight[7] * 3.28084) : 0; // Meters to feet
+                    const heading = flight[10] || 0; // True track angle in degrees
+                    const altitude = flight[7] ? Math.round(flight[7] * 3.28084) : 0; // Feet
                     
                     if (lat && lon) {
+                        // VECTOR UPGRADE: Using a native inline SVG plane silhouette path.
+                        // This uses pure browser code to render crisp airplane graphics that rotate smoothly.
+                        const svgPlane = `
+                            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" style="transform: rotate(${heading}deg); width: 24px; height: 24px;">
+                                <path fill="#ff3b30" d="M448 336v-40L288 192V79.2c0-17.7-14.3-32-32-32s-32 14.3-32 32V192L64 296v40l160-48v113.6l-48 36v28.8l88-24 88 24v-28.8l-48-36V288l160 48z"/>
+                            </svg>
+                            <div style="color: #66fcf1; background: rgba(17, 20, 26, 0.85); padding: 1px 4px; border-radius: 3px; font-size: 10px; font-weight: bold; margin-top: 2px; font-family: monospace; border: 1px solid rgba(102, 252, 241, 0.3); text-shadow: 1px 1px 2px #000;">
+                                ${callsign} ${Math.round(altitude/100)}
+                            </div>
+                        `;
+
                         const blipIcon = L.divIcon({
-                            html: `<div style="display: flex; flex-direction: column; align-items: center;">
-                                     <div style="background-color: #ff3b30; width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 10px #ff3b30; border: 1px solid #fff;"></div>
-                                     <div style="color: #00f2fe; background: rgba(15, 20, 30, 0.85); border: 1px solid #00f2fe; padding: 2px 5px; border-radius: 4px; font-size: 10px; font-weight: bold; margin-top: 4px; white-space: nowrap; font-family: monospace;">${callsign} <span style="color:#fff;">${Math.round(altitude/100)}</span></div>
-                                   </div>`,
+                            html: `<div style="display: flex; flex-direction: column; align-items: center; width: 60px;">${svgPlane}</div>`,
                             className: 'jet-blip',
-                            iconSize: [50, 50],
-                            iconAnchor: [25, 5]
+                            iconSize: [60, 40],
+                            iconAnchor: [30, 12]
                         });
 
                         const marker = L.marker([lat, lon], {icon: blipIcon}).addTo(map);
@@ -128,18 +131,18 @@
                     }
                 });
             } catch (err) {
-                console.error("Telemetry pipeline stall:", err);
+                console.error("Telemetry stall:", err);
             }
         }
 
-        // CRITICAL FIX: Force the tablet browser to calculate and draw map sizes instantly on load
+        // Force browser to fully compute map window boundaries instantly on load
         window.addEventListener('load', () => {
             setTimeout(() => {
                 map.invalidateSize();
             }, 100);
         });
 
-        // Run checking scans continuously every 10 seconds
+        // Run data fetching loop every 10 seconds
         refreshAirspaceTelemetry();
         setInterval(refreshAirspaceTelemetry, 10000);
     </script>
