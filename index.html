@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Apple Valley Flight Radar Command</title>
+    <title>Apple Valley Radar Station</title>
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
@@ -15,11 +15,11 @@
         #screen-split {
             display: flex; flex-direction: column; height: 100vh; width: 100vw;
         }
-        /* Top Section: Native Interactive Radar Grid */
+        /* Top Radar Grid Window */
         #map {
             height: 72%; width: 100%; background: #0f1115;
         }
-        /* Bottom Section: JetClock Panel */
+        /* Bottom JetClock Panel */
         #clock-container {
             height: 28%; width: 100%; background: #151922;
             display: flex; flex-direction: column;
@@ -40,12 +40,12 @@
         <div id="map"></div>
         <div id="clock-container">
             <div id="time-text">00:00:00</div>
-            <div id="date-text">SYNCHRONIZING TELEMETRY...</div>
+            <div id="date-text">SYNCHRONIZING SYSTEM CHRONOMETER...</div>
         </div>
     </div>
 
     <script>
-        // 1. DIGITAL CLOCK MODULE RUNTIME
+        // 1. CLOCK SYNCHRONIZATION RUNTIME
         function tickClock() {
             const now = new Date();
             document.getElementById('time-text').innerText = now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit', hour12: false});
@@ -54,27 +54,29 @@
         setInterval(tickClock, 1000);
         tickClock();
 
-        // 2. TACTICAL RADAR GRID ENGINE (Apple Valley Coordinates)
+        // 2. RADAR ENGINE (Apple Valley Geolocation Array)
         const homeLat = 44.7375513;
         const homeLng = -93.2008404;
 
-        // Initialize map framework over the Twin Cities South Metro sector
+        // Initialize display context with fade animations turned off to force instant rendering
         const map = L.map('map', {
             zoomControl: false,
-            attributionControl: false
+            attributionControl: false,
+            fadeAnimation: false,
+            markerZoomAnimation: false
         }).setView([homeLat, homeLng], 11);
 
-        // Core OpenStreetMap layout engine. Highly optimized and never goes blank.
+        // Standard OpenStreetMap base layer
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             maxZoom: 19
         }).addTo(map);
 
-        // Injects a digital filter layer that shifts the light map into a clean dark air traffic control layout
+        // CSS Injector: Forces the standard light map into a beautiful dark tactical radar grid
         const styleElement = document.createElement('style');
         styleElement.innerHTML = '.leaflet-tile-container img { filter: brightness(0.25) invert(1) sepia(1) hue-rotate(185deg) saturate(2); }';
         document.head.appendChild(styleElement);
 
-        // Set up your glowing blue home base marker beacon
+        // Core Home Beacon Marker
         const homeIcon = L.divIcon({
             html: '<div style="background-color: #00f2fe; width: 14px; height: 14px; border-radius: 50%; box-shadow: 0 0 15px #00f2fe; border: 2px solid #fff;"></div>',
             className: 'home-marker',
@@ -84,35 +86,33 @@
 
         let planeMarkers = [];
 
-        function clearMapTargets() {
+        function clearAirspace() {
             planeMarkers.forEach(m => map.removeLayer(m));
             planeMarkers = [];
         }
 
-        // Pull real-time positions directly from FlightAware's open public API proxy feed
-        async function updateRadarTargets() {
-            // Target a clean 40km vector block around your roof
+        // Pull flight metrics via public open-source data infrastructure
+        async function refreshAirspaceTelemetry() {
             const targetUrl = `https://opensky-network.org/api/states/all?lamin=44.55&lomin=-93.45&lamax=44.95&lomax=-92.95`;
             const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(targetUrl)}&cb=${Date.now()}`;
             
             try {
                 const response = await fetch(proxyUrl);
-                if (!response.ok) throw new Error("Latency Drop");
+                if (!response.ok) throw new Error("Connection dropped");
                 
                 const wrapperData = await response.json();
                 const data = JSON.parse(wrapperData.contents);
                 const states = data.states || [];
                 
-                clearMapTargets();
+                clearAirspace();
 
                 states.forEach(flight => {
                     const callsign = flight[1] ? flight[1].trim() : "UNK";
                     const lon = flight[5];
                     const lat = flight[6];
                     const altitude = flight[7] ? Math.round(flight[7] * 3.28084) : 0; // Meters to feet
-
+                    
                     if (lat && lon) {
-                        // Plot each flight onto your tablet map screen as a distinct, glowing target blip
                         const blipIcon = L.divIcon({
                             html: `<div style="display: flex; flex-direction: column; align-items: center;">
                                      <div style="background-color: #ff3b30; width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 10px #ff3b30; border: 1px solid #fff;"></div>
@@ -128,13 +128,20 @@
                     }
                 });
             } catch (err) {
-                console.error("Telemetry data gap:", err);
+                console.error("Telemetry pipeline stall:", err);
             }
         }
 
-        // Set scanning cycles to run every 10 seconds
-        updateRadarTargets();
-        setInterval(updateRadarTargets, 10000);
+        // CRITICAL FIX: Force the tablet browser to calculate and draw map sizes instantly on load
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                map.invalidateSize();
+            }, 100);
+        });
+
+        // Run checking scans continuously every 10 seconds
+        refreshAirspaceTelemetry();
+        setInterval(refreshAirspaceTelemetry, 10000);
     </script>
 </body>
 </html>
