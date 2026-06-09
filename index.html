@@ -3,34 +3,131 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Apple Valley Flight Radar Launchpad</title>
+    <title>Apple Valley Radar Command</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <style>
-        body {
-            background-color: #111;
-            color: #fff;
+        body, html {
+            margin: 0; padding: 0; height: 100%; width: 100%;
+            background-color: #0b0c10; overflow: hidden;
             font-family: sans-serif;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            font-size: 1.5em;
+        }
+        #screen-split {
+            display: flex; flex-direction: column; height: 100vh; width: 100vw;
+        }
+        #map {
+            height: 72%; width: 100%; background: #0b0c10;
+        }
+        #clock-container {
+            height: 28%; width: 100%; background: #151922;
+            display: flex; flex-direction: column;
+            justify-content: center; align-items: center;
+            border-top: 2px solid #66fcf1; box-shadow: 0 -10px 20px rgba(0,0,0,0.5); z-index: 1000;
+        }
+        #time-text {
+            font-size: 4.2em; font-weight: bold; color: #66fcf1; margin: 0; line-height: 1; font-family: monospace;
+        }
+        #date-text {
+            font-size: 1.1em; color: #c5a059; font-weight: 300; letter-spacing: 2px; margin-top: 8px; text-transform: uppercase;
         }
     </style>
-    <script>
-        // Directly targets your Apple Valley coordinates
-        const homeLat = 44.7375;
-        const homeLon = -93.2008;
-        const zoomLevel = 11;
-
-        // The exact direct radar link
-        const radarUrl = `https://adsb.fi/?lat=${homeLat}&lon=${homeLon}&zoom=${zoomLevel}`;
-
-        // The split-second the page opens, forcefully redirect the browser window
-        window.location.replace(radarUrl);
-    </script>
 </head>
 <body>
-    <div>Connecting to live Apple Valley airspace grid...</div>
+
+    <div id="screen-split">
+        <div id="map"></div>
+        <div id="clock-container">
+            <div id="time-text">00:00:00</div>
+            <div id="date-text">SYNCHRONIZING TELEMETRY...</div>
+        </div>
+    </div>
+
+    <script>
+        // 1. DIGITAL CLOCK LOGIC
+        function tickClock() {
+            const now = new Date();
+            document.getElementById('time-text').innerText = now.toLocaleTimeString([], {hour: '2-digit', minute:'2-digit', second:'2-digit', hour12: false});
+            document.getElementById('date-text').innerText = now.toLocaleDateString([], { weekday: 'long', month: 'short', day: 'numeric' });
+        }
+        setInterval(tickClock, 1000);
+        tickClock();
+
+        // 2. RADAR ENGINE (Apple Valley Coordinates)
+        const homeLat = 44.7375513;
+        const homeLng = -93.2008404;
+
+        const map = L.map('map', {
+            zoomControl: false,
+            attributionControl: false
+        }).setView([homeLat, homeLng], 11);
+
+        // Dark minimalist map base layer
+        L.tileLayer('https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png', {
+            maxZoom: 19
+        }).addTo(map);
+
+        // Light blue glowing home marker
+        const homeIcon = L.divIcon({
+            html: '<div style="background-color: #66fcf1; width: 12px; height: 12px; border-radius: 50%; box-shadow: 0 0 15px #66fcf1; border: 2px solid #fff;"></div>',
+            className: 'home-marker',
+            iconSize: [12, 12]
+        });
+        L.marker([homeLat, homeLng], {icon: homeIcon}).addTo(map);
+
+        let planeMarkers = [];
+
+        // Clear previous airplanes from the screen
+        function clearPlanes() {
+            planeMarkers.forEach(m => map.removeLayer(m));
+            planeMarkers = [];
+        }
+
+        // Fetch live flight tracking data locally using a reliable public proxy network
+        async function fetchLiveFlights() {
+            const apiTarget = `https://api.adsb.lol/v2/lat/${homeLat}/lon/${homeLng}/dist/35`;
+            // Using a public proxy setup specifically allowed for cross-origin fetching
+            const cleanUrl = `https://corsproxy.io/?${encodeURIComponent(apiTarget)}`;
+
+            try {
+                const response = await fetch(cleanUrl);
+                if (!response.ok) throw new Error("Feed update dropped");
+                
+                const data = await response.json();
+                const planesList = data.ac || [];
+                
+                clearPlanes();
+
+                planesList.forEach(plane => {
+                    const lat = plane.lat;
+                    const lon = plane.lon;
+                    const callsign = plane.flight ? plane.flight.trim() : (plane.r || "UNKNOWN");
+                    const alt = plane.alt_baro || 0;
+
+                    if (lat && lon) {
+                        // Create a distinct yellow aircraft dot with its flight number label
+                        const jetIcon = L.divIcon({
+                            html: `<div style="display: flex; flex-direction: column; align-items: center;">
+                                     <div style="background-color: #ff3333; width: 10px; height: 10px; border-radius: 50%; box-shadow: 0 0 8px #ff3333;"></div>
+                                     <div style="color: #fff; background: rgba(0,0,0,0.7); padding: 1px 4px; border-radius: 3px; font-size: 10px; font-weight: bold; margin-top: 2px; white-space: nowrap;">${callsign}</div>
+                                   </div>`,
+                            className: 'jet-marker',
+                            iconSize: [40, 40],
+                            iconAnchor: [20, 5]
+                        });
+
+                        const marker = L.marker([lat, lon], {icon: jetIcon}).addTo(map);
+                        planeMarkers.push(marker);
+                    }
+                });
+
+            } catch (err) {
+                console.error("Radar refresh error:", err);
+            }
+        }
+
+        // Automatically scan the local corridors every 10 seconds
+        fetchLiveFlights();
+        setInterval(fetchLiveFlights, 10000);
+    </script>
 </body>
 </html>
